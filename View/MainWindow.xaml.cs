@@ -1,5 +1,6 @@
 ﻿using ACCess.ViewModel;
 using System.Diagnostics;
+using System.Linq;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
@@ -16,7 +17,8 @@ namespace ACCess.View
             InitializeComponent();
             DataContext = vm;
 
-            lblVersion.Text = $"Version {Assembly.GetExecutingAssembly().GetName().Version}";
+            var version = typeof(MainWindow).GetTypeInfo().Assembly.GetCustomAttributes<AssemblyInformationalVersionAttribute>().First().InformationalVersion;
+            lblVersion.Text = $"Version {version}";
         }
 
         private void Hyperlink_RequestNavigate(object sender, System.Windows.Navigation.RequestNavigateEventArgs e)
