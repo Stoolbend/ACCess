@@ -3,7 +3,11 @@ using ACCess.Model;
 using ACCess.Services;
 using Microsoft.Toolkit.Mvvm.ComponentModel;
 using Microsoft.Toolkit.Mvvm.Input;
+using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace ACCess.ViewModel
@@ -22,8 +26,10 @@ namespace ACCess.ViewModel
 
         private string? _addFavouriteAddress;
         private string? _addFavouriteDescription;
+        private string? _addFavouriteErrorText;
         private string? _customServerInput;
         private string? _directory;
+        private string? _errorText;
         private bool _loadingStatus;
         private string? _loadingStatusText;
         private SavedServer? _selectedSavedServer;
@@ -48,6 +54,15 @@ namespace ACCess.ViewModel
         }
 
         /// <summary>
+        /// Text to display if validation errors occur for adding favourites.
+        /// </summary>
+        public string? AddFavouriteErrorText
+        {
+            get => _addFavouriteErrorText;
+            set => SetProperty(ref _addFavouriteErrorText, value);
+        }
+
+        /// <summary>
         /// A UI input that allows the user to set a server that's not in the saved list.
         /// </summary>
         public string? CustomServerInput
@@ -63,6 +78,15 @@ namespace ACCess.ViewModel
         {
             get => _directory;
             set => SetProperty(ref _directory, value);
+        }
+
+        /// <summary>
+        /// Text to be shown on the UI if there is a validation error.
+        /// </summary>
+        public string? ErrorText
+        {
+            get => _errorText;
+            set => SetProperty(ref _errorText, value);
         }
 
         /// <summary>
@@ -82,11 +106,10 @@ namespace ACCess.ViewModel
             get => _loadingStatusText;
             set => SetProperty(ref _loadingStatusText, value);
         }
-
         /// <summary>
         /// Contains a list of locally saved server details, which can be selected by the user.
         /// </summary>
-        public ObservableCollection<SavedServer> SavedServers { get; set; }
+        public ObservableCollection<SavedServer> SavedServers { get; } = new ObservableCollection<SavedServer>();
 
         /// <summary>
         /// The selected saved server (if the user has selected one in the UI).
@@ -110,12 +133,13 @@ namespace ACCess.ViewModel
 
         #region Commands
 
-        public IRelayCommand AddFavourite { get; }
-        public IRelayCommand DeleteFavourite { get; }
+        public IAsyncRelayCommand AddFavourite { get; }
+        public IAsyncRelayCommand DeleteFavourite { get; }
         public IAsyncRelayCommand Refresh { get; }
         public IRelayCommand Reset { get; }
         public IAsyncRelayCommand Save { get; }
         public IRelayCommand SelectFavourite { get; }
+        public IRelayCommand DeselectFavourite { get; }
 
         #endregion Commands
 
@@ -129,13 +153,93 @@ namespace ACCess.ViewModel
             _userSettings = new SettingsHelper<UserSettings>("settings.json");
 
             // Register commands
+            AddFavourite = new AsyncRelayCommand(AddFavouriteHandlerAsync);
+            DeleteFavourite = new AsyncRelayCommand(DeleteFavouriteHandlerAsync);
             Refresh = new AsyncRelayCommand(RefreshHandlerAsync);
             Reset = new RelayCommand(ResetHandler);
             Save = new AsyncRelayCommand(SaveHandlerAsync);
+            SelectFavourite = new RelayCommand(SelectFavouriteHandler);
+        }
+
+        public async Task AddFavouriteHandlerAsync()
+        {
+            AddFavouriteErrorText = null;
+
+            // Validate (at least) address is set
+            if (string.IsNullOrWhiteSpace(AddFavouriteAddress))
+            {
+                AddFavouriteErrorText = "You can't save an empty address to your favourites.\r\nPlease enter an address before tying again.";
+                return;
+            }
+            if (!ValidateIPAddress(AddFavouriteAddress))
+            {
+                AddFavouriteErrorText = "That IP address is invalid.\r\nPlease make sure the IP address is correct before trying again.";
+                return;
+            }
+            if (SavedServers.Where(v => v.Address.Equals(AddFavouriteAddress)).Any())
+            {
+                AddFavouriteErrorText = "That address is already saved in your favourites.";
+                LoadingStatus = false;
+                LoadingStatusText = null;
+                return;
+            }
+
+            LoadingStatus = true;
+            LoadingStatusText = "Adding favourite server...";
+
+            // Add server to end of list
+            var server = new SavedServer(AddFavouriteAddress)
+            {
+                Description = AddFavouriteDescription,
+                Order = (ushort)SavedServers.Count
+            };
+            SavedServers.Add(server);
+
+            // Save favourites list
+            var settings = await _favSettings.LoadAsync();
+            if (settings == null)
+                settings = new FavouriteSettings();
+            settings.FavouriteServers = new List<SavedServer>(SavedServers);
+            await _favSettings.SaveAsync(settings);
+
+            LoadingStatus = false;
+            LoadingStatusText = null;
+        }
+
+        public async Task DeleteFavouriteHandlerAsync()
+        {
+            AddFavouriteErrorText = null;
+
+            // Validate (at least) address is set
+            if (SelectedSavedServer == null)
+            {
+                AddFavouriteErrorText = "You need to select a favourite server to delete first.\r\nPlease select a server before tying again.";
+                return;
+            }
+
+            LoadingStatus = true;
+            LoadingStatusText = "Deleting favourite server...";
+
+            // Remove server from list & deselct it
+            SavedServers.Remove(SelectedSavedServer);
+            SelectedSavedServer = null;
+
+            // Save favourites list
+            var settings = await _favSettings.LoadAsync();
+            if (settings == null)
+                settings = new FavouriteSettings();
+            settings.FavouriteServers = new List<SavedServer>(SavedServers);
+            await _favSettings.SaveAsync(settings);
+
+            LoadingStatus = false;
+            LoadingStatusText = null;
+
+            await RefreshHandlerAsync();
         }
 
         public async Task RefreshHandlerAsync()
         {
+            ErrorText = null;
             LoadingStatus = true;
             LoadingStatusText = "Loading settings...";
             var settings = await _userSettings.LoadAsync();
@@ -143,6 +247,9 @@ namespace ACCess.ViewModel
                 Directory = settings.Directory;
             else
                 Directory = FileHelper.GetDefaultDirectory();
+
+            LoadingStatusText = "Loading favourites...";
+            await PopulateSavedServersAsync();
 
             LoadingStatusText = "Reading serverList.json...";
             var serverList = await _game.ReadServerListAsync(Directory);
@@ -155,6 +262,14 @@ namespace ACCess.ViewModel
             LoadingStatusText = null;
         }
 
+        public void SelectFavouriteHandler()
+        {
+            if (SelectedSavedServer == null)
+                SelectedServer = null;
+            else
+                SelectedServer = SelectedSavedServer.Address;
+        }
+
         public void ResetHandler()
         {
             Directory = FileHelper.GetDefaultDirectory();
@@ -164,17 +279,23 @@ namespace ACCess.ViewModel
         {
             if (string.IsNullOrWhiteSpace(SelectedServer))
             {
-                // Deal with this
+                ErrorText = "You cannot save an empty address.\r\nTo clear the current server, click the red 'Reset' button below.";
                 return;
             }
 
+            ErrorText = null;
             LoadingStatus = true;
             LoadingStatusText = "Updating serverList.json...";
 
-            // Validate the input (either selected favourite or custom input)
+            // Validate the input
+            if (!ValidateIPAddress(SelectedServer))
+            {
+                ErrorText = "That IP address is invalid.\r\nPlease make sure the IP address is correct before trying again.";
+                return;
+            }
             if (!System.IO.Directory.Exists(Directory))
             {
-                // Directory doesn't exist - show a validation error
+                ErrorText = "The config directory does not exist.\r\nPlease make sure the location is correct before trying again.";
                 return;
             }
 
@@ -192,6 +313,21 @@ namespace ACCess.ViewModel
 
             LoadingStatus = false;
             LoadingStatusText = null;
+        }
+
+        private async Task PopulateSavedServersAsync()
+        {
+            var favourites = await _favSettings.LoadAsync();
+            if (favourites == null)
+                favourites = new FavouriteSettings();
+            SavedServers.Clear();
+            foreach (var item in favourites.FavouriteServers.OrderBy(v => v.Order))
+                SavedServers.Add(item);
+        }
+
+        private bool ValidateIPAddress(string address)
+        {
+            return Regex.Match(address, @"^((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)(\.(?!$)|$)){4}$").Success;
         }
     }
 }

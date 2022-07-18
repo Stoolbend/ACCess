@@ -13,6 +13,7 @@
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibility"/>
         <converters:StringVisibilityCollapsed x:Key="StringVisibilityCollapsed"/>
+        <converters:NullObjectBooleanFalse x:Key="NullObjectBooleanFalse"/>
         <converters:NullStringVisibilityCollapsed x:Key="NullStringVisibilityCollapsed"/>
     </Window.Resources>
     <Grid>
@@ -30,11 +31,18 @@
 
         <DockPanel Margin="5,0,5,0"
                    LastChildFill="True">
-            <TextBlock Text="Issues?"
-                       FontWeight="Bold"
-                       Margin="0,0,5,0"/>
-            <TextBlock Text="GitHub"
-                       Margin="0,0,5,0"/>
+            <TextBlock FontWeight="Bold"
+                       Margin="0,0,10,0">
+                <Hyperlink NavigateUri="https://github.com/Stoolbend/ACCess/issues" 
+                           RequestNavigate="Hyperlink_RequestNavigate">
+                    Issues?
+                </Hyperlink>
+            </TextBlock>
+            <TextBlock Margin="0,0,10,0">
+                <Hyperlink NavigateUri="https://github.com/Stoolbend/ACCess" RequestNavigate="Hyperlink_RequestNavigate">
+                    GitHub
+                </Hyperlink>
+            </TextBlock>
             <TextBlock x:Name="lblVersion"
                        TextAlignment="Right"
                        FontStyle="Italic"/>
@@ -66,9 +74,12 @@
                     <TextBlock Text="Currently selected server"
                                HorizontalAlignment="Center"
                                Margin="0,0,0,15"/>
-                    <TextBox Text="{Binding SelectedServer}"
+                    <TextBox x:Name="txtAddress"
+                             Text="{Binding SelectedServer}"
                              TextAlignment="Center"
-                             FontSize="20"/>
+                             FontSize="20"
+                             TextChanged="txtAddress_TextChanged"
+                             TabIndex="0"/>
                     <TextBlock Visibility="{Binding ErrorText, Converter={StaticResource StringVisibilityCollapsed}}"
                                Text="{Binding ErrorText}"
                                TextAlignment="Center"
@@ -94,14 +105,17 @@
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <TextBox Text="{Binding Directory}"/>
+                        <TextBox Text="{Binding Directory}"
+                                 IsTabStop="False"/>
                         <Button Grid.Column="1"
                                 Content="Browse"
-                                Command="{Binding ResetDirectory}"/>
+                                Command="{Binding ResetDirectory}"
+                                IsTabStop="False"/>
                         <Button Grid.Column="2"
                                 Content="Reset"
                                 Command="{Binding ResetDirectory}"
-                                 Margin="5,0,0,0"/>
+                                Margin="5,0,0,0"
+                                IsTabStop="False"/>
                     </Grid>
                 </GroupBox>
 
@@ -121,7 +135,8 @@
                     <Button
                         Command="{Binding Save}"
                         Background="LightGreen"
-                        FontWeight="Bold">
+                        FontWeight="Bold"
+                        TabIndex="2">
                         <TextBlock TextWrapping="Wrap"
                                    TextAlignment="Center">
                             Update<LineBreak/>serverList.json
@@ -134,11 +149,13 @@
                             Command="{Binding Reset}"
                             Background="LightCoral"
                             FontSize="11"
-                            Margin="0,0,0,11"/>
+                            Margin="0,0,0,11"
+                            TabIndex="3"/>
                         <Button
                             Grid.Column="2"
                             Content="Refresh"
-                            Command="{Binding Refresh}"/>
+                            Command="{Binding Refresh}"
+                            TabIndex="4"/>
                     </StackPanel>
                 </Grid>
             </Grid>
@@ -156,16 +173,40 @@
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <TextBlock Text="Favourites"
-                           Margin="0,0,0,5"/>
+                <Grid Margin="0,0,0,5">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
 
-                <ListBox Grid.Row="1"
+                    <TextBlock Text="Favourites"/>
+
+                    <Button Grid.Column="1"
+                            Command="{Binding DeleteFavourite}"
+                            Content="Delete Selected"
+                            IsEnabled="{Binding SelectedSavedServer, Converter={StaticResource NullObjectBooleanFalse}}"
+                            IsTabStop="False"/>
+                </Grid>
+
+                <ListBox x:Name="lstFavourites"
+                         Grid.Row="1"
                          ItemsSource="{Binding SavedServers}"
-                         Margin="0,0,0,5">
+                         SelectedItem="{Binding SelectedSavedServer, Mode=TwoWay}"
+                         Margin="0,0,0,5"
+                         TabIndex="1">
+                    <behaviors:Interaction.Triggers>
+                        <behaviors:EventTrigger EventName="SelectionChanged">
+                            <behaviors:InvokeCommandAction Command="{Binding SelectFavourite}"/>
+                        </behaviors:EventTrigger>
+                    </behaviors:Interaction.Triggers>
+                    
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <DockPanel LastChildFill="True">
-                                <TextBlock Text="{Binding Address}"/>
+                                <TextBlock Text="{Binding Address}"
+                                           FontWeight="Bold"/>
+                                <Separator Style="{StaticResource {x:Static ToolBar.SeparatorStyleKey}}"
+                                           Margin="5,0,5,0"/>
                                 <TextBlock Text="{Binding Description}"/>
                             </DockPanel>
                         </DataTemplate>
@@ -174,11 +215,20 @@
 
                 <Grid Grid.Row="2">
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="25"/>
                         <RowDefinition Height="20"/>
                     </Grid.RowDefinitions>
 
-                    <Grid Margin="0,0,0,5">
+                    <TextBlock Visibility="{Binding AddFavouriteErrorText, Converter={StaticResource StringVisibilityCollapsed}}"
+                               Text="{Binding AddFavouriteErrorText}"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap"
+                               VerticalAlignment="Center"
+                               Margin="0,0,0,5"/>
+                    
+                    <Grid Grid.Row="1"
+                          Margin="0,0,0,5">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
@@ -187,22 +237,24 @@
                             <TextBlock Text="Address"
                                     VerticalAlignment="Center"
                                     Margin="0,0,5,0"/>
-                            <TextBox Text="{Binding AddFavouriteAddress}"/>
+                            <TextBox Text="{Binding AddFavouriteAddress}"
+                                     TabIndex="5"/>
                         </DockPanel>
                         <Button
                             Grid.Column="1"
                             Content="Add"
                             Command="{Binding AddFavourite}"
-                            MinWidth="35"/>
+                            MinWidth="35"
+                            TabIndex="7"/>
                     </Grid>
 
-                    <DockPanel
-                        Grid.Row="1"
-                        LastChildFill="True">
+                    <DockPanel Grid.Row="2"
+                               LastChildFill="True">
                         <TextBlock Text="Description"
                                    VerticalAlignment="Center"
                                    Margin="0,0,5,0"/>
-                        <TextBox Text="{Binding AddFavouriteDescription}"/>
+                        <TextBox Text="{Binding AddFavouriteDescription}"
+                                 TabIndex="6"/>
                     </DockPanel>
                 </Grid>
             </Grid>

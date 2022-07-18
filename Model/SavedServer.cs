@@ -6,6 +6,7 @@
         public string? Description { get; set; }
         public ushort Order { get; set; }
 
+        public SavedServer() { }
         public SavedServer(string address)
         {
             Address = address;
