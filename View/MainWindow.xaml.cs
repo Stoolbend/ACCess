@@ -44,5 +44,17 @@ namespace ACCess.View
             else
                 vm.UnsavedChanges = false;
         }
+
+        private void btnDirectoryBrowse_Click(object sender, RoutedEventArgs e)
+        {
+            var vm = DataContext as MainViewModel;
+            using (var dialog = new System.Windows.Forms.FolderBrowserDialog())
+            {
+                dialog.InitialDirectory = vm.Directory;
+                var result = dialog.ShowDialog();
+                if (result == System.Windows.Forms.DialogResult.OK)
+                    vm.Directory = dialog.SelectedPath;
+            }
+        }
     }
 }

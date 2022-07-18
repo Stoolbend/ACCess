@@ -127,8 +127,9 @@
                                  IsTabStop="False" />
                         <Button Grid.Column="1"
                                 Content="Browse"
-                                Command="{Binding ResetDirectory}"
-                                IsTabStop="False" />
+                                IsTabStop="False"
+                                x:Name="btnDirectoryBrowse"
+                                Click="btnDirectoryBrowse_Click" />
                         <Button Grid.Column="2"
                                 Content="Reset"
                                 Command="{Binding ResetDirectory}"
