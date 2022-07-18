@@ -34,6 +34,9 @@ namespace ACCess.ViewModel
         private string? _loadingStatusText;
         private SavedServer? _selectedSavedServer;
         private string? _selectedServer;
+        private ServerList? _serverList;
+        private string? _successText;
+        private bool _unsavedChanges;
 
         /// <summary>
         /// The address of the saved server being added.
@@ -106,6 +109,7 @@ namespace ACCess.ViewModel
             get => _loadingStatusText;
             set => SetProperty(ref _loadingStatusText, value);
         }
+
         /// <summary>
         /// Contains a list of locally saved server details, which can be selected by the user.
         /// </summary>
@@ -129,17 +133,49 @@ namespace ACCess.ViewModel
             set => SetProperty(ref _selectedServer, value);
         }
 
+        /// <summary>
+        /// The string that needs to be injected into the game files.
+        /// </summary>
+        public string? ServerListAddress
+        {
+            get
+            {
+                if (_serverList != null)
+                    return _serverList.LeagueServerIp;
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Text to be shown on the UI for success messages.
+        /// </summary>
+        public string? SuccessText
+        {
+            get => _successText;
+            set => SetProperty(ref _successText, value);
+        }
+
+        /// <summary>
+        /// True if there are unsaved changes, otherwise false.
+        /// </summary>
+        public bool UnsavedChanges
+        {
+            get => _unsavedChanges;
+            set => SetProperty(ref _unsavedChanges, value);
+        }
+
         #endregion Properties
 
         #region Commands
 
         public IAsyncRelayCommand AddFavourite { get; }
+        public IAsyncRelayCommand Clear { get; }
         public IAsyncRelayCommand DeleteFavourite { get; }
+        public IRelayCommand DeselectFavourite { get; }
         public IAsyncRelayCommand Refresh { get; }
-        public IRelayCommand Reset { get; }
+        public IRelayCommand ResetDirectory { get; }
         public IAsyncRelayCommand Save { get; }
         public IRelayCommand SelectFavourite { get; }
-        public IRelayCommand DeselectFavourite { get; }
 
         #endregion Commands
 
@@ -154,9 +190,10 @@ namespace ACCess.ViewModel
 
             // Register commands
             AddFavourite = new AsyncRelayCommand(AddFavouriteHandlerAsync);
+            Clear = new AsyncRelayCommand(ClearHandlerAsync);
             DeleteFavourite = new AsyncRelayCommand(DeleteFavouriteHandlerAsync);
             Refresh = new AsyncRelayCommand(RefreshHandlerAsync);
-            Reset = new RelayCommand(ResetHandler);
+            ResetDirectory = new RelayCommand(ResetDirectoryHandler);
             Save = new AsyncRelayCommand(SaveHandlerAsync);
             SelectFavourite = new RelayCommand(SelectFavouriteHandler);
         }
@@ -206,6 +243,35 @@ namespace ACCess.ViewModel
             LoadingStatusText = null;
         }
 
+        public async Task ClearHandlerAsync()
+        {
+            ErrorText = null;
+            SuccessText = null;
+            LoadingStatus = true;
+            LoadingStatusText = "Deleting serverList.json...";
+
+            // Clear properties
+            SelectedServer = null;
+            SelectedSavedServer = null;
+
+            // Then clear the file
+            try
+            {
+                _game.DeleteServerList();
+                SuccessText = "serverList.json cleared successfully!";
+            }
+            catch (Exception ex)
+            {
+                ErrorText = $"Exception while deleting serverList.json\r\n{ex.Message}";
+                LoadingStatus = false;
+                LoadingStatusText = null;
+            }
+            finally
+            {
+                await RefreshHandlerAsync();
+            }
+        }
+
         public async Task DeleteFavouriteHandlerAsync()
         {
             AddFavouriteErrorText = null;
@@ -252,9 +318,9 @@ namespace ACCess.ViewModel
             await PopulateSavedServersAsync();
 
             LoadingStatusText = "Reading serverList.json...";
-            var serverList = await _game.ReadServerListAsync(Directory);
-            if (serverList != null && !string.IsNullOrWhiteSpace(serverList.LeagueServerIp))
-                SelectedServer = serverList?.LeagueServerIp;
+            _serverList = await _game.ReadServerListAsync(Directory);
+            if (_serverList != null && !string.IsNullOrWhiteSpace(_serverList.LeagueServerIp))
+                SelectedServer = _serverList?.LeagueServerIp;
             else
                 SelectedServer = null;
 
@@ -262,30 +328,27 @@ namespace ACCess.ViewModel
             LoadingStatusText = null;
         }
 
-        public void SelectFavouriteHandler()
+        public void ResetDirectoryHandler()
         {
-            if (SelectedSavedServer == null)
-                SelectedServer = null;
-            else
-                SelectedServer = SelectedSavedServer.Address;
-        }
+            ErrorText = null;
+            SuccessText = null;
 
-        public void ResetHandler()
-        {
             Directory = FileHelper.GetDefaultDirectory();
         }
 
         public async Task SaveHandlerAsync()
         {
-            if (string.IsNullOrWhiteSpace(SelectedServer))
-            {
-                ErrorText = "You cannot save an empty address.\r\nTo clear the current server, click the red 'Reset' button below.";
-                return;
-            }
-
             ErrorText = null;
+            SuccessText = null;
             LoadingStatus = true;
             LoadingStatusText = "Updating serverList.json...";
+
+            // Check if we're clearing the file, or updating it
+            if (string.IsNullOrWhiteSpace(SelectedServer))
+            {
+                await ClearHandlerAsync();
+                return;
+            }
 
             // Validate the input
             if (!ValidateIPAddress(SelectedServer))
@@ -299,20 +362,46 @@ namespace ACCess.ViewModel
                 return;
             }
 
-            // Save to the game files
-            await _game.SetServerListAsync(new ServerList
+            try
             {
-                LeagueServerIp = SelectedServer
-            }, Directory);
+                // Save to the game files
+                var newServerList = new ServerList
+                {
+                    LeagueServerIp = SelectedServer
+                };
+                await _game.SetServerListAsync(newServerList, Directory);
+                _serverList = newServerList;
 
-            // Save the changed user settings
-            await _userSettings.SaveAsync(new UserSettings
+                SuccessText = "serverList.json updated successfully!";
+            }
+            catch (Exception ex)
             {
-                Directory = Directory
-            });
+                ErrorText = $"Exception while saving serverList.json\r\n{ex.Message}";
+                LoadingStatus = false;
+                LoadingStatusText = null;
+            }
+            finally
+            {
+                // Save the changed user settings
+                await _userSettings.SaveAsync(new UserSettings
+                {
+                    Directory = Directory
+                });
 
-            LoadingStatus = false;
-            LoadingStatusText = null;
+                LoadingStatus = false;
+                LoadingStatusText = null;
+            }
+        }
+
+        public void SelectFavouriteHandler()
+        {
+            ErrorText = null;
+            SuccessText = null;
+
+            if (SelectedSavedServer == null)
+                SelectedServer = null;
+            else
+                SelectedServer = SelectedSavedServer.Address;
         }
 
         private async Task PopulateSavedServersAsync()

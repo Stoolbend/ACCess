@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.Reflection;
 using System.Windows;
+using System.Windows.Controls;
 
 namespace ACCess.View
 {
@@ -26,12 +27,20 @@ namespace ACCess.View
 
         private void txtAddress_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
         {
+            var parent = sender as TextBox;
             var vm = DataContext as MainViewModel;
             if (vm.SelectedSavedServer != null && !string.Equals(vm.SelectedSavedServer.Address, vm.SelectedServer))
             {
                 lstFavourites.SelectedItem = null;
                 vm.SelectedSavedServer = null;
             }
+
+            if (!string.IsNullOrWhiteSpace(vm.ServerListAddress) && !string.Equals(vm.ServerListAddress, parent.Text))
+                vm.UnsavedChanges = true;
+            else if (!string.IsNullOrWhiteSpace(parent.Text))
+                vm.UnsavedChanges = true;
+            else
+                vm.UnsavedChanges = false;
         }
     }
 }

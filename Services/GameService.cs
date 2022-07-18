@@ -1,6 +1,5 @@
 ﻿using ACCess.Helpers;
 using ACCess.Model;
-using System;
 using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -9,12 +8,27 @@ namespace ACCess.Services
 {
     public interface IGameService
     {
+        void DeleteServerList(string? directory = null);
+
         Task<ServerList?> ReadServerListAsync(string? directory = null);
+
         Task SetServerListAsync(ServerList data, string? directory = null);
     }
 
     public class GameService : IGameService
     {
+        public void DeleteServerList(string? directory = null)
+        {
+            string filePath;
+            if (string.IsNullOrWhiteSpace(directory))
+                filePath = Path.Combine(FileHelper.GetDefaultDirectory(), "serverList.json");
+            else
+                filePath = Path.Combine(directory, "serverList.json");
+
+            // Delete the file
+            File.Delete(filePath);
+        }
+
         public async Task<ServerList?> ReadServerListAsync(string? directory = null)
         {
             ServerList result = new ServerList();
